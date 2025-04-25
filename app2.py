@@ -731,20 +731,20 @@ def admin_user_detail(user_id):
     """, (user_id, user_id))
     transactions = cursor.fetchall()
     
-   # 사용자 관련 신고 내역
-cursor.execute("""
-SELECT r.*, 
-ru.username as reporter_name, 
-tu.username as target_name
-FROM report r
-JOIN user ru ON r.reporter_id = ru.id
-JOIN user tu ON r.target_id = tu.id
-WHERE r.reporter_id = ? OR r.target_id = ?
-ORDER BY r.created_at DESC
-""", (user_id, user_id))
-reports = cursor.fetchall()
-
-return render_template('admin_user_detail.html', user=user, products=products, transactions=transactions, reports=reports)
+    # 사용자 관련 신고 내역
+    cursor.execute("""
+        SELECT r.*, 
+               ru.username as reporter_name, 
+               tu.username as target_name
+        FROM report r
+        JOIN user ru ON r.reporter_id = ru.id
+        JOIN user tu ON r.target_id = tu.id
+        WHERE r.reporter_id = ? OR r.target_id = ?
+        ORDER BY r.created_at DESC
+    """, (user_id, user_id))
+    reports = cursor.fetchall()
+    
+    return render_template('admin_user_detail.html', user=user, products=products, transactions=transactions, reports=reports)
 
 # 불량 유저 휴면 기능 추가 부분
 @app.route('/admin/user/<user_id>/suspend', methods=['POST'])
@@ -757,6 +757,7 @@ def suspend_user(user_id):
     flash('사용자가 휴면 상태로 변경되었습니다.')
     return redirect(url_for('admin_user_detail', user_id=user_id))
 
-<form action="{{ url_for('suspend_user', user_id=user.id) }}" method="post">
-    <button type="submit" class="btn btn-warning">휴면 상태로 변경</button>
-</form>
+# 데이터베이스 초기화 및 서버 실행
+if __name__ == '__main__':
+    init_db()
+    socketio.run(app, debug=True)
