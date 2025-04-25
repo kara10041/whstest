@@ -732,3 +732,364 @@ def admin_users():
         @property
         def has_next(self):
             return self.page < self
+@property
+    def has_next(self):
+        return self.page < self.pages
+    
+    @property
+    def prev_page(self):
+        return self.page - 1 if self.has_prev else None
+    
+    @property
+    def next_page(self):
+        return self.page + 1 if self.has_next else None
+
+pagination = Pagination(page, per_page, total_users)
+    
+return render_template('admin_users.html', users=users, pagination=pagination, search_query=search_query)
+
+# 관리자 페이지 - 사용자 상태 변경
+@app.route('/admin/user/<user_id>/status', methods=['POST'])
+@admin_required
+def admin_change_user_status(user_id):
+    new_status = request.form['status']
+    
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("UPDATE user SET status = ? WHERE id = ?", (new_status, user_id))
+    db.commit()
+    
+    flash('사용자 상태가 변경되었습니다.')
+    return redirect(url_for('admin_users'))
+
+# 관리자 페이지 - 사용자 상세 정보
+@app.route('/admin/user/<user_id>')
+@admin_required
+def admin_view_user(user_id):
+    db = get_db()
+    cursor = db.cursor()
+    
+    # 사용자 정보 조회
+    cursor.execute("SELECT * FROM user WHERE id = ?", (user_id,))
+    user = cursor.fetchone()
+    
+    if not user:
+        flash('사용자를 찾을 수 없습니다.')
+        return redirect(url_for('admin_users'))
+    
+    # 사용자가 등록한 상품 조회
+    cursor.execute("SELECT * FROM product WHERE seller_id = ?", (user_id,))
+    products = cursor.fetchall()
+    
+    # 사용자의 거래 내역 조회
+    cursor.execute("""
+        SELECT t.*, 
+               s.username as sender_name, 
+               r.username as receiver_name,
+               p.title as product_title
+        FROM transactions t
+        JOIN user s ON t.sender_id = s.id
+        JOIN user r ON t.receiver_id = r.id
+        LEFT JOIN product p ON t.product_id = p.id
+        WHERE t.sender_id = ? OR t.receiver_id = ?
+        ORDER BY t.created_at DESC
+    """, (user_id, user_id))
+    transactions = cursor.fetchall()
+    
+    # 사용자 관련 신고 내역 조회
+    cursor.execute("""
+        SELECT r.*, 
+               u1.username as reporter_name, 
+               CASE
+                   WHEN u2.id IS NOT NULL THEN u2.username
+                   WHEN p.id IS NOT NULL THEN p.title
+                   ELSE '알 수 없음'
+               END as target_name
+        FROM report r
+        JOIN user u1 ON r.reporter_id = u1.id
+        LEFT JOIN user u2 ON r.target_id = u2.id
+        LEFT JOIN product p ON r.target_id = p.id
+        WHERE r.reporter_id = ? OR r.target_id = ?
+        ORDER BY r.created_at DESC
+    """, (user_id, user_id))
+    reports = cursor.fetchall()
+    
+    return render_template('admin_view_user.html', 
+                          user=user, 
+                          products=products, 
+                          transactions=transactions, 
+                          reports=reports)
+
+# 관리자 페이지 - 상품 관리
+@app.route('/admin/products')
+@admin_required
+def admin_products():
+    db = get_db()
+    cursor = db.cursor()
+    
+    # 검색 기능 추가
+    search_query = request.args.get('search', '')
+    status_filter = request.args.get('status', 'all')
+    page = request.args.get('page', 1, type=int)
+    per_page = 10  # 페이지당 상품 수
+    
+    query = """
+        SELECT p.*, u.username as seller_name 
+        FROM product p 
+        JOIN user u ON p.seller_id = u.id
+        WHERE 1=1
+    """
+    params = []
+    
+    if search_query:
+        query += " AND (p.title LIKE ? OR p.description LIKE ?)"
+        params.extend([f'%{search_query}%', f'%{search_query}%'])
+    
+    if status_filter != 'all':
+        query += " AND p.status = ?"
+        params.append(status_filter)
+    
+    query += " ORDER BY p.created_at DESC"
+    
+    cursor.execute(query, params)
+    all_products = cursor.fetchall()
+    
+    # 페이지네이션 처리
+    total_products = len(all_products)
+    total_pages = (total_products + per_page - 1) // per_page
+    
+    start_idx = (page - 1) * per_page
+    end_idx = min(start_idx + per_page, total_products)
+    products = all_products[start_idx:end_idx]
+    
+    # 페이지네이션 객체 생성 (위에서 정의한 클래스 사용)
+    pagination = Pagination(page, per_page, total_products)
+    
+    return render_template('admin_products.html', 
+                          products=products, 
+                          pagination=pagination, 
+                          search_query=search_query,
+                          status_filter=status_filter)
+
+# 관리자 페이지 - 신고 관리
+@app.route('/admin/reports')
+@admin_required
+def admin_reports():
+    db = get_db()
+    cursor = db.cursor()
+    
+    # 상태별 필터링
+    status_filter = request.args.get('status', 'pending')
+    page = request.args.get('page', 1, type=int)
+    per_page = 10  # 페이지당 신고 수
+    
+    query = """
+        SELECT r.*, 
+               u1.username as reporter_name, 
+               CASE
+                   WHEN u2.id IS NOT NULL THEN u2.username
+                   WHEN p.id IS NOT NULL THEN p.title
+                   ELSE '알 수 없음'
+               END as target_name,
+               CASE
+                   WHEN u2.id IS NOT NULL THEN 'user'
+                   WHEN p.id IS NOT NULL THEN 'product'
+                   ELSE 'unknown'
+               END as target_type
+        FROM report r
+        JOIN user u1 ON r.reporter_id = u1.id
+        LEFT JOIN user u2 ON r.target_id = u2.id
+        LEFT JOIN product p ON r.target_id = p.id
+        WHERE 1=1
+    """
+    params = []
+    
+    if status_filter != 'all':
+        query += " AND r.status = ?"
+        params.append(status_filter)
+    
+    query += " ORDER BY r.created_at DESC"
+    
+    cursor.execute(query, params)
+    all_reports = cursor.fetchall()
+    
+    # 페이지네이션 처리
+    total_reports = len(all_reports)
+    total_pages = (total_reports + per_page - 1) // per_page
+    
+    start_idx = (page - 1) * per_page
+    end_idx = min(start_idx + per_page, total_reports)
+    reports = all_reports[start_idx:end_idx]
+    
+    # 페이지네이션 객체 생성
+    pagination = Pagination(page, per_page, total_reports)
+    
+    return render_template('admin_reports.html', 
+                          reports=reports, 
+                          pagination=pagination, 
+                          status_filter=status_filter)
+
+# 관리자 페이지 - 신고 처리
+@app.route('/admin/report/<report_id>/process', methods=['POST'])
+@admin_required
+def admin_process_report(report_id):
+    new_status = request.form['status']
+    action = request.form.get('action', None)
+    
+    db = get_db()
+    cursor = db.cursor()
+    
+    # 신고 상태 업데이트
+    cursor.execute("UPDATE report SET status = ? WHERE id = ?", (new_status, report_id))
+    
+    # 신고 정보 조회
+    cursor.execute("SELECT * FROM report WHERE id = ?", (report_id,))
+    report = cursor.fetchone()
+    
+    # 추가 액션 수행 (타겟 계정/상품 정지 등)
+    if action and report:
+        target_id = report['target_id']
+        
+        # 사용자에 대한 신고인 경우
+        cursor.execute("SELECT * FROM user WHERE id = ?", (target_id,))
+        user = cursor.fetchone()
+        if user:
+            if action == 'suspend_user':
+                cursor.execute("UPDATE user SET status = 'suspended' WHERE id = ?", (target_id,))
+            elif action == 'delete_user':
+                # 실제로는 삭제보다 status를 변경하는 것이 안전
+                cursor.execute("UPDATE user SET status = 'deleted' WHERE id = ?", (target_id,))
+        
+        # 상품에 대한 신고인 경우
+        cursor.execute("SELECT * FROM product WHERE id = ?", (target_id,))
+        product = cursor.fetchone()
+        if product:
+            if action == 'remove_product':
+                cursor.execute("UPDATE product SET status = 'deleted' WHERE id = ?", (target_id,))
+    
+    db.commit()
+    flash('신고가 처리되었습니다.')
+    return redirect(url_for('admin_reports'))
+
+# 관리자 페이지 - 거래 내역 조회
+@app.route('/admin/transactions')
+@admin_required
+def admin_transactions():
+    db = get_db()
+    cursor = db.cursor()
+    
+    # 검색 및 필터링
+    search_query = request.args.get('search', '')
+    start_date = request.args.get('start_date', '')
+    end_date = request.args.get('end_date', '')
+    page = request.args.get('page', 1, type=int)
+    per_page = 20  # 페이지당 거래 수
+    
+    query = """
+        SELECT t.*, 
+               s.username as sender_name, 
+               r.username as receiver_name,
+               p.title as product_title
+        FROM transactions t
+        JOIN user s ON t.sender_id = s.id
+        JOIN user r ON t.receiver_id = r.id
+        LEFT JOIN product p ON t.product_id = p.id
+        WHERE 1=1
+    """
+    params = []
+    
+    if search_query:
+        query += " AND (s.username LIKE ? OR r.username LIKE ? OR p.title LIKE ?)"
+        search_param = f'%{search_query}%'
+        params.extend([search_param, search_param, search_param])
+    
+    if start_date:
+        query += " AND t.created_at >= ?"
+        params.append(start_date)
+    
+    if end_date:
+        query += " AND t.created_at <= ?"
+        params.append(end_date + " 23:59:59")  # 해당 날짜의 끝까지 포함
+    
+    query += " ORDER BY t.created_at DESC"
+    
+    cursor.execute(query, params)
+    all_transactions = cursor.fetchall()
+    
+    # 페이지네이션 처리
+    total_transactions = len(all_transactions)
+    total_pages = (total_transactions + per_page - 1) // per_page
+    
+    start_idx = (page - 1) * per_page
+    end_idx = min(start_idx + per_page, total_transactions)
+    transactions = all_transactions[start_idx:end_idx]
+    
+    # 페이지네이션 객체 생성
+    pagination = Pagination(page, per_page, total_transactions)
+    
+    return render_template('admin_transactions.html', 
+                          transactions=transactions, 
+                          pagination=pagination, 
+                          search_query=search_query,
+                          start_date=start_date,
+                          end_date=end_date)
+
+# Socket.IO 이벤트 처리
+@socketio.on('join')
+def on_join(data):
+    room = data['room']
+    join_room(room)
+
+@socketio.on('leave')
+def on_leave(data):
+    room = data['room']
+    leave_room(room)
+
+@socketio.on('message')
+def handle_message(data):
+    room_id = data['room']
+    message = data['message']
+    
+    if not room_id or not message or 'user_id' not in session:
+        return
+    
+    db = get_db()
+    cursor = db.cursor()
+    
+    # 채팅방 확인
+    cursor.execute("SELECT * FROM chat_room WHERE id = ?", (room_id,))
+    room = cursor.fetchone()
+    
+    if not room:
+        return
+    
+    # 사용자가 해당 채팅방에 참여 중인지 확인
+    if room['seller_id'] != session['user_id'] and room['buyer_id'] != session['user_id']:
+        return
+    
+    # 메시지 저장
+    message_id = str(uuid.uuid4())
+    now = datetime.datetime.now()
+    cursor.execute(
+        "INSERT INTO chat_message (id, room_id, sender_id, message, created_at) VALUES (?, ?, ?, ?, ?)",
+        (message_id, room_id, session['user_id'], message, now)
+    )
+    db.commit()
+    
+    # 사용자 정보 조회
+    cursor.execute("SELECT username FROM user WHERE id = ?", (session['user_id'],))
+    user = cursor.fetchone()
+    
+    # 채팅방에 메시지 전송
+    emit('message', {
+        'id': message_id,
+        'sender_id': session['user_id'],
+        'sender_name': user['username'],
+        'message': message,
+        'created_at': now.strftime('%Y-%m-%d %H:%M:%S')
+    }, room=room_id)
+
+# 애플리케이션 초기화 및 실행
+if __name__ == '__main__':
+    init_db()  # 최초 실행 시 데이터베이스 초기화
+    socketio.run(app, debug=True)
