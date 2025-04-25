@@ -691,73 +691,44 @@ def admin_users():
     db = get_db()
     cursor = db.cursor()
     
-    # 모든 사용자 조회
-    cursor.execute("SELECT * FROM user ORDER BY created_at DESC")
-    users = cursor.fetchall()
+    # 검색 기능 추가
+    search_query = request.args.get('search', '')
+    page = request.args.get('page', 1, type=int)
+    per_page = 10  # 페이지당 사용자 수
     
-    return render_template('admin_users.html', users=users)
-
-# 관리자 페이지 - 사용자 상세
-@app.route('/admin/user/<user_id>')
-@admin_required
-def admin_user_detail(user_id):
-    db = get_db()
-    cursor = db.cursor()
+    if search_query:
+        # 검색어가 있는 경우
+        cursor.execute("""
+            SELECT * FROM user 
+            WHERE username LIKE ? OR id LIKE ?
+            ORDER BY created_at DESC
+        """, (f'%{search_query}%', f'%{search_query}%'))
+    else:
+        # 모든 사용자 조회
+        cursor.execute("SELECT * FROM user ORDER BY created_at DESC")
     
-    # 사용자 정보
-    cursor.execute("SELECT * FROM user WHERE id = ?", (user_id,))
-    user = cursor.fetchone()
+    all_users = cursor.fetchall()
     
-    if not user:
-        flash('사용자를 찾을 수 없습니다.')
-        return redirect(url_for('admin_users'))
+    # 페이지네이션 처리 (간단한 버전)
+    total_users = len(all_users)
+    total_pages = (total_users + per_page - 1) // per_page
     
-    # 사용자가 등록한 상품
-    cursor.execute("SELECT * FROM product WHERE seller_id = ? ORDER BY created_at DESC", (user_id,))
-    products = cursor.fetchall()
+    start_idx = (page - 1) * per_page
+    end_idx = min(start_idx + per_page, total_users)
+    users = all_users[start_idx:end_idx]
     
-    # 사용자 관련 거래 내역
-    cursor.execute("""
-        SELECT t.*, 
-               s.username as sender_name, 
-               r.username as receiver_name,
-               p.title as product_title
-        FROM transactions t
-        JOIN user s ON t.sender_id = s.id
-        JOIN user r ON t.receiver_id = r.id
-        LEFT JOIN product p ON t.product_id = p.id
-        WHERE t.sender_id = ? OR t.receiver_id = ?
-        ORDER BY t.created_at DESC
-    """, (user_id, user_id))
-    transactions = cursor.fetchall()
-    
-    # 사용자 관련 신고 내역
-    cursor.execute("""
-        SELECT r.*, 
-               ru.username as reporter_name, 
-               tu.username as target_name
-        FROM report r
-        JOIN user ru ON r.reporter_id = ru.id
-        JOIN user tu ON r.target_id = tu.id
-        WHERE r.reporter_id = ? OR r.target_id = ?
-        ORDER BY r.created_at DESC
-    """, (user_id, user_id))
-    reports = cursor.fetchall()
-    
-    return render_template('admin_user_detail.html', user=user, products=products, transactions=transactions, reports=reports)
-
-# 불량 유저 휴면 기능 추가 부분
-@app.route('/admin/user/<user_id>/suspend', methods=['POST'])
-@admin_required
-def suspend_user(user_id):
-    db = get_db()
-    cursor = db.cursor()
-    cursor.execute("UPDATE user SET status = 'suspended' WHERE id = ?", (user_id,))
-    db.commit()
-    flash('사용자가 휴면 상태로 변경되었습니다.')
-    return redirect(url_for('admin_user_detail', user_id=user_id))
-
-# 데이터베이스 초기화 및 서버 실행
-if __name__ == '__main__':
-    init_db()
-    socketio.run(app, debug=True)
+    # 페이지네이션 정보를 담은 가상의 객체 생성
+    class Pagination:
+        def __init__(self, page, per_page, total_count):
+            self.page = page
+            self.per_page = per_page
+            self.total_count = total_count
+            self.pages = (total_count + per_page - 1) // per_page
+        
+        @property
+        def has_prev(self):
+            return self.page > 1
+        
+        @property
+        def has_next(self):
+            return self.page < self
