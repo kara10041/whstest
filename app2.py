@@ -756,7 +756,6 @@ def suspend_user(user_id):
     flash('사용자가 휴면 상태로 변경되었습니다.')
     return redirect(url_for('admin_user_detail', user_id=user_id))
 
-<!-- admin_user_detail.html -->
 <form action="{{ url_for('suspend_user', user_id=user.id) }}" method="post">
     <button type="submit" class="btn btn-warning">휴면 상태로 변경</button>
 </form>
