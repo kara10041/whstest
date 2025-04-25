@@ -746,6 +746,7 @@ reports = cursor.fetchall()
 
 return render_template('admin_user_detail.html', user=user, products=products, transactions=transactions, reports=reports)
 
+# 불량 유저 휴면 기능 추가 부분
 @app.route('/admin/user/<user_id>/suspend', methods=['POST'])
 @admin_required
 def suspend_user(user_id):
@@ -757,5 +758,5 @@ def suspend_user(user_id):
     return redirect(url_for('admin_user_detail', user_id=user_id))
 
 <form action="{{ url_for('suspend_user', user_id=user.id) }}" method="post">
-    <button type="submit" class="btn btn-warning">휴면 상태로 변경</button>
+    <button type="submit" class="btn btn-warning">휴면 상태로 변경</button>
 </form>
