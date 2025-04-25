@@ -114,9 +114,9 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        # 거래 내역 테이블 추가
+        # 거래 내역 테이블 추가 
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS transaction (
+            CREATE TABLE IF NOT EXISTS transactions (
                 id TEXT PRIMARY KEY,
                 sender_id TEXT NOT NULL,
                 receiver_id TEXT NOT NULL,
@@ -256,7 +256,7 @@ def profile():
                s.username as sender_name, 
                r.username as receiver_name,
                p.title as product_title
-        FROM transaction t
+        FROM transactions t
         JOIN user s ON t.sender_id = s.id
         JOIN user r ON t.receiver_id = r.id
         LEFT JOIN product p ON t.product_id = p.id
@@ -476,11 +476,11 @@ def transfer():
         # 수신자 잔액 증가
         cursor.execute("UPDATE user SET balance = balance + ? WHERE id = ?", (amount, receiver['id']))
         
-        # 거래 내역 기록
+        # 거래 내역 기록 - 수정 버전
         cursor.execute(
-            "INSERT INTO transaction (id, sender_id, receiver_id, amount, product_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (transaction_id, session['user_id'], receiver['id'], amount, product_id, datetime.datetime.now())
-        )
+        'INSERT INTO transactions (id, sender_id, receiver_id, amount, product_id, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+        (transaction_id, session['user_id'], receiver['id'], amount, product_id, datetime.datetime.now())
+            )
         
         # 상품이 있는 경우 상품 상태 변경
         if product_id:
@@ -523,7 +523,7 @@ def deposit():
         # 거래 내역 기록 (시스템에서 사용자로)
         transaction_id = str(uuid.uuid4())
         cursor.execute(
-            "INSERT INTO transaction (id, sender_id, receiver_id, amount, created_at) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO transactions (id, sender_id, receiver_id, amount, created_at) VALUES (?, ?, ?, ?, ?)",
             (transaction_id, session['user_id'], session['user_id'], amount, datetime.datetime.now())
         )
         
@@ -671,7 +671,7 @@ def admin_dashboard():
     new_products = cursor.fetchone()['count']
     
     # 최근 완료된 거래 수
-    cursor.execute("SELECT COUNT(*) as count FROM transaction WHERE created_at >= date('now', '-7 day')")
+    cursor.execute("SELECT COUNT(*) as count FROM transactions WHERE created_at >= date('now', '-7 day')")
     new_transactions = cursor.fetchone()['count']
     
     # 처리 대기 중인 신고 수
@@ -722,7 +722,7 @@ def admin_user_detail(user_id):
                s.username as sender_name, 
                r.username as receiver_name,
                p.title as product_title
-        FROM transaction t
+        FROM transactions t
         JOIN user s ON t.sender_id = s.id
         JOIN user r ON t.receiver_id = r.id
         LEFT JOIN product p ON t.product_id = p.id
