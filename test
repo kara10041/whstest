@@ -1,0 +1,250 @@
+import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# 데이터 로드 함수
+def load_dataset():
+    data = pd.read_csv('Traffic.csv')
+    table = pd.DataFrame({'Counts': [data.shape[0], data.shape[1]]}, index=['Rows', 'Columns'])
+    return data, table
+
+# 시각화 함수
+def plot_weekday_hourly_mood_score(data):
+    """
+    요일별 및 시간대별 평균 기분스코어를 시각화하는 함수.
+    Streamlit 환경에서 작동하도록 설정.
+    """
+
+    # 24시간 숫자를 12시간제 AM/PM 표기로 변환
+    def hour_label(hour):
+        period = 'AM' if hour < 12 else 'PM'
+        hour12 = hour % 12
+        if hour12 == 0:
+            hour12 = 12
+        return f'{hour12}{period}'
+    
+    # 시간대 라벨 생성
+    data['TimeSlot'] = data['Hour'].apply(hour_label)
+
+    
+    # 요일별 평균 통행량 계산
+    weekday_avg = data.groupby('weekday')['mood_score'].mean().reindex(
+        ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    )
+
+    # 시간대별 평균 통행량 계산
+    hour_avg = data.groupby('TimeSlot')['mood_score'].mean()
+
+    # 요일별 평균 통행량 그래프
+    st.subheader('Average Mood Score by Day of the Week')
+    fig, ax = plt.subplots(figsize=(12, 5))
+    ax.bar(weekday_avg.index, weekday_avg.values)
+    ax.set_title('Average Mood Score by Day of the Week')
+    ax.set_xlabel('Day of the Week')
+    ax.set_ylabel('Average Mood Score')
+    ax.grid(axis='y', linestyle='--', alpha=0.7)
+    st.pyplot(fig)
+
+    # 시간대별 평균 통행량 그래프
+    st.subheader('Average Mood Score by Hour of the Day')
+    fig, ax = plt.subplots(figsize=(12, 5))
+    ax.plot(hour_avg.index, hour_avg.values, marker='o')
+    ax.set_title('Average Mood Score by Hour of the Day')
+    ax.set_xlabel('Hour of the Day')
+    ax.set_ylabel('Average Mood Score')
+    ax.set_xticks(range(0, 24))
+    ax.grid(axis='both', linestyle='--', alpha=0.7)
+    return fig
+
+
+def plot_filtered_mood(data, moods):
+    """
+    선택한 교통 상황(Traffic Situation)에 따라 데이터를 필터링하여 파이 차트를 생성합니다.
+    
+    Parameters:
+        data (pd.DataFrame): 교통 데이터를 포함하는 DataFrame.
+        situations (list): 선택된 교통 상황 목록.
+    """
+
+    filtered_data = data[data['mood'].isin(moods)]
+    mood_counts = filtered_data['mood'].value_counts()
+
+    # 파이 차트 생성
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.pie(traffic_counts, labels=traffic_counts.index, autopct='%1.1f%%', startangle=140)
+    ax.set_title('Selected Mood Distribution')
+    plt.tight_layout()
+    return fig
+
+
+  def plot_top_activities(data):
+      """
+      자주 기록된 활동 TOP 10을 막대 그래프로 시각화합니다.
+      """
+      activity_series = data['activities'].dropna().str.split(',').explode()
+      activity_series = activity_series.str.strip()
+  
+      top_activities = activity_series.value_counts().head(10)
+  
+      fig, ax = plt.subplots(figsize=(10, 6))
+      ax.bar(top_activities.index, top_activities.values)
+      ax.set_title('Top 10 Activities')
+      ax.set_xlabel('Activity')
+      ax.set_ylabel('Count')
+      ax.tick_params(axis='x', rotation=45)
+      ax.grid(axis='y', linestyle='--', alpha=0.7)
+      plt.tight_layout()
+      return fig
+
+  def plot_activity_avg_mood(data):
+      """
+      활동별 평균 기분 점수를 막대 그래프로 시각화합니다.
+      """
+      activity_data = data[['activities', 'mood_score']].dropna()
+  
+      activity_data['activity'] = activity_data['activities'].str.split('|')
+      activity_data = activity_data.explode('activity')
+      activity_data['activity'] = activity_data['activity'].str.strip()
+  
+      activity_avg = activity_data.groupby('activity')['mood_score'].mean()
+      activity_avg = activity_avg.sort_values(ascending=False).head(10)
+  
+      fig, ax = plt.subplots(figsize=(10, 6))
+      ax.bar(activity_avg.index, activity_avg.values)
+      ax.set_title('Average Mood Score by Activity')
+      ax.set_xlabel('Activity')
+      ax.set_ylabel('Average Mood Score')
+      ax.tick_params(axis='x', rotation=45)
+      ax.grid(axis='y', linestyle='--', alpha=0.7)
+      plt.tight_layout()
+      return fig
+
+
+''''''
+
+def plot_daily_mood_trend_with_filter(data, start_date, end_date):
+    """
+    날짜(Date) 범위를 필터링하여 추세를 라인 차트로 시각화합니다.
+    
+    Parameters:
+        data (pd.DataFrame): 교통 데이터를 포함하는 DataFrame.
+        start_date (str): 필터링 시작 날짜.
+        end_date (str): 필터링 종료 날짜.
+    """
+    # 날짜 필터링
+    filtered_data = data[(data['Date'] >= start_date) & (data['Date'] <= end_date)]
+    daily_totals = filtered_data.groupby('Date')['Total'].sum()
+
+    # 라인 차트 생성
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.plot(daily_totals.index, daily_totals.values, marker='o')
+    ax.set_title('Daily Traffic Volume Trend')
+    ax.set_xlabel('Date')
+    ax.set_ylabel('Total Traffic Volume')
+    ax.grid(axis='both', linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    return fig
+
+
+def plot_time_filtered_heatmap(data, hour_range):
+    """
+    시간대(Hour) 범위를 필터링하여 요일 및 시간대별 교통량을 열지도로 시각화합니다.
+    
+    Parameters:
+        data (pd.DataFrame): 교통 데이터를 포함하는 DataFrame.
+        hour_range (tuple): 필터링할 시간대 범위 (start_hour, end_hour).
+    """
+    # 시간 정보 변환
+    data['Hour'] = pd.to_datetime(data['Time'], format='%I:%M:%S %p').dt.hour
+    
+    # 시간대 필터링
+    start_hour, end_hour = hour_range
+    filtered_data = data[(data['Hour'] >= start_hour) & (data['Hour'] <= end_hour)]
+    
+    # 피벗 테이블 생성
+    heatmap_data = filtered_data.pivot_table(
+        index='Day of the week', columns='Hour', values='Total', aggfunc='mean'
+    ).reindex(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])
+
+    # 열지도 생성
+    fig, ax = plt.subplots(figsize=(12, 8))
+    sns.heatmap(heatmap_data, ax=ax, cmap='YlGnBu', annot=True, fmt=".1f", cbar_kws={'label': 'Average Traffic Volume'})
+    ax.set_title(f'Average Traffic Volume (Hours: {start_hour}-{end_hour})')
+    ax.set_xlabel('Hour of the Day')
+    ax.set_ylabel('Day of the Week')
+    plt.tight_layout()
+    return fig
+
+
+# Streamlit 앱
+def main():
+    st.title("Traffic Data Dashboard")
+    st.sidebar.title("Filters and Options")
+    
+    # 데이터 로드
+    data, table = load_dataset()
+    st.sidebar.write("### Dataset Overview")
+    st.sidebar.table(table)
+
+    # 데이터 전처리
+    data['Hour'] = pd.to_datetime(data['Time'], format='%I:%M:%S %p').dt.hour
+    
+    # 교통 상황 필터
+    situations = st.sidebar.multiselect(
+        "Select Traffic Situations",
+        options=data['Traffic Situation'].unique(),
+        default=data['Traffic Situation'].unique()
+    )
+
+    # 날짜 필터
+    min_date, max_date = data['Date'].min(), data['Date'].max()
+    start_date, end_date = st.sidebar.slider(
+        "Select Date Range",
+        min_value=min_date,
+        max_value=max_date,
+        value=(min_date, max_date)
+    )
+    
+    # 시간대 필터
+    hour_range = st.sidebar.slider(
+        "Select Hour Range",
+        min_value=0,
+        max_value=23,
+        value=(0, 23)
+    )
+    
+    # 탭으로 그래프 선택
+    st.write("### Explore Traffic Data")
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        ["Weekday & Hourly", "Traffic Situation", "Vehicle Totals", "Daily Trend", "Heatmap"]
+    )
+    
+    with tab1:
+        st.write("#### Weekday & Hourly Traffic Volume")
+        week_hourly_traffic_fig = plot_weekday_hourly_traffic(data)
+        st.pyplot(week_hourly_traffic_fig)
+    
+    with tab2:
+        st.write("#### Traffic Situation Distribution")
+        filtered_situation_fig = plot_filtered_traffic_situation(data, situations)
+        st.pyplot(filtered_situation_fig)
+    
+    with tab3:
+        st.write("#### Total Traffic Counts by Vehicle Type")
+        vehicle_totals_fig = plot_vehicle_type_totals(data)
+        st.pyplot(vehicle_totals_fig)
+    
+    with tab4:
+        st.write("#### Daily Traffic Volume Trend")
+        daily_trend_fig = plot_daily_traffic_trend_with_filter(data, start_date, end_date)
+        st.pyplot(daily_trend_fig)
+    
+    with tab5:
+        st.write("#### Weekday and Hourly Heatmap")
+        time_filtered_heatmap_fig = plot_time_filtered_heatmap(data, hour_range)
+        st.pyplot(time_filtered_heatmap_fig)
+
+# 앱 실행
+if __name__ == "__main__":
+    main()
