@@ -120,66 +120,64 @@ def plot_filtered_mood(data, moods):
       plt.tight_layout()
       return fig
 
-
-''''''
-
-def plot_daily_mood_trend_with_filter(data, start_date, end_date):
-    """
-    날짜(Date) 범위를 필터링하여 추세를 라인 차트로 시각화합니다.
+    def filter_weather_data(data, start_date, end_date, temp_range, humidity_range, precip_range):
+        """
+        날짜, 기온, 습도, 강수량 조건에 따라 데이터를 중첩 필터링합니다.
+        """
     
-    Parameters:
-        data (pd.DataFrame): 교통 데이터를 포함하는 DataFrame.
-        start_date (str): 필터링 시작 날짜.
-        end_date (str): 필터링 종료 날짜.
-    """
-    # 날짜 필터링
-    filtered_data = data[(data['Date'] >= start_date) & (data['Date'] <= end_date)]
-    daily_totals = filtered_data.groupby('Date')['Total'].sum()
-
-    # 라인 차트 생성
-    fig, ax = plt.subplots(figsize=(12, 6))
-    ax.plot(daily_totals.index, daily_totals.values, marker='o')
-    ax.set_title('Daily Traffic Volume Trend')
-    ax.set_xlabel('Date')
-    ax.set_ylabel('Total Traffic Volume')
-    ax.grid(axis='both', linestyle='--', alpha=0.7)
-    plt.tight_layout()
-    return fig
-
-
-def plot_time_filtered_heatmap(data, hour_range):
-    """
-    시간대(Hour) 범위를 필터링하여 요일 및 시간대별 교통량을 열지도로 시각화합니다.
+        # 날짜 컬럼 변환
+        data['date_iso'] = pd.to_datetime(data['date_iso'])
     
-    Parameters:
-        data (pd.DataFrame): 교통 데이터를 포함하는 DataFrame.
-        hour_range (tuple): 필터링할 시간대 범위 (start_hour, end_hour).
-    """
-    # 시간 정보 변환
-    data['Hour'] = pd.to_datetime(data['Time'], format='%I:%M:%S %p').dt.hour
+        # 입력 날짜 변환
+        start_date = pd.to_datetime(start_date)
+        end_date = pd.to_datetime(end_date)
     
-    # 시간대 필터링
-    start_hour, end_hour = hour_range
-    filtered_data = data[(data['Hour'] >= start_hour) & (data['Hour'] <= end_hour)]
+        # 날짜 필터링
+        filtered_data = data[
+            (data['date_iso'] >= start_date) &
+            (data['date_iso'] <= end_date)
+        ]
     
-    # 피벗 테이블 생성
-    heatmap_data = filtered_data.pivot_table(
-        index='Day of the week', columns='Hour', values='Total', aggfunc='mean'
-    ).reindex(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'])
-
-    # 열지도 생성
-    fig, ax = plt.subplots(figsize=(12, 8))
-    sns.heatmap(heatmap_data, ax=ax, cmap='YlGnBu', annot=True, fmt=".1f", cbar_kws={'label': 'Average Traffic Volume'})
-    ax.set_title(f'Average Traffic Volume (Hours: {start_hour}-{end_hour})')
-    ax.set_xlabel('Hour of the Day')
-    ax.set_ylabel('Day of the Week')
-    plt.tight_layout()
-    return fig
+        # 기온 필터링
+        filtered_data = filtered_data[
+            (filtered_data['temperature_c'] >= temp_range[0]) &
+            (filtered_data['temperature_c'] <= temp_range[1])
+        ]
+    
+        # 습도 필터링
+        filtered_data = filtered_data[
+            (filtered_data['humidity_percent'] >= humidity_range[0]) &
+            (filtered_data['humidity_percent'] <= humidity_range[1])
+        ]
+    
+        # 강수량 필터링
+        filtered_data = filtered_data[
+            (filtered_data['precipitation_mm'] >= precip_range[0]) &
+            (filtered_data['precipitation_mm'] <= precip_range[1])
+        ]
+    
+        return filtered_data
+    
+    def plot_filtered_weather_mood(data):
+        """
+        필터링된 데이터에서 weather별 평균 mood_score를 막대 그래프로 시각화합니다.
+        """
+    
+        weather_avg = data.groupby('weather')['mood_score'].mean()
+    
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.bar(weather_avg.index, weather_avg.values)
+        ax.set_title('Average Mood Score by Weather')
+        ax.set_xlabel('Weather')
+        ax.set_ylabel('Average Mood Score')
+        ax.grid(axis='y', linestyle='--', alpha=0.7)
+        plt.tight_layout()
+        return fig
 
 
 # Streamlit 앱
 def main():
-    st.title("Traffic Data Dashboard")
+    st.title("MY DAILY MOOD DATA Dashboard")
     st.sidebar.title("Filters and Options")
     
     # 데이터 로드
@@ -188,31 +186,44 @@ def main():
     st.sidebar.table(table)
 
     # 데이터 전처리
-    data['Hour'] = pd.to_datetime(data['Time'], format='%I:%M:%S %p').dt.hour
+    data['Hour'] = pd.to_datetime(data['time'], format='%I:%M:%S %p').dt.hour
     
-    # 교통 상황 필터
-    situations = st.sidebar.multiselect(
-        "Select Traffic Situations",
-        options=data['Traffic Situation'].unique(),
-        default=data['Traffic Situation'].unique()
-    )
+    # 날짜 컬럼 변환
+    data['date_iso'] = pd.to_datetime(data['date_iso'])
+    
+    # 시간 컬럼 이름 확인
+    time_col = 'time' 
+    
+    # 시간 정보를 Hour로 변환
+    data['Hour'] = pd.to_datetime(
+        data[time_col],
+        format='%I:%M:%S %p',
+        errors='coerce'
+    ).dt.hour
+    
+    # 24시간 숫자를 12시간제 AM/PM 라벨로 변환
+    def hour_label(hour):
+        if pd.isna(hour):
+            return None
+        
+        hour = int(hour)
+        period = 'AM' if hour < 12 else 'PM'
+        hour12 = hour % 12
+        
+        if hour12 == 0:
+            hour12 = 12
+        
+        return f'{hour12}{period}'
 
-    # 날짜 필터
-    min_date, max_date = data['Date'].min(), data['Date'].max()
-    start_date, end_date = st.sidebar.slider(
-        "Select Date Range",
-        min_value=min_date,
-        max_value=max_date,
-        value=(min_date, max_date)
-    )
-    
-    # 시간대 필터
-    hour_range = st.sidebar.slider(
-        "Select Hour Range",
-        min_value=0,
-        max_value=23,
-        value=(0, 23)
-    )
+
+# 그래프용 시간대 컬럼 생성
+data['TimeSlot'] = data['Hour'].apply(hour_label)
+
+# 숫자형 컬럼 변환
+data['mood_score'] = pd.to_numeric(data['mood_score'], errors='coerce')
+data['temperature_c'] = pd.to_numeric(data['temperature_c'], errors='coerce')
+data['humidity_percent'] = pd.to_numeric(data['humidity_percent'], errors='coerce')
+data['precipitation_mm'] = pd.to_numeric(data['precipitation_mm'], errors='coerce')
     
     # 탭으로 그래프 선택
     st.write("### Explore Traffic Data")
