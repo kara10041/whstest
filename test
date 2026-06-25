@@ -1,261 +1,312 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
 
 # 데이터 로드 함수
 def load_dataset():
     data = pd.read_csv('Daylio_Abid_with_synthetic_weather.csv')
-    table = pd.DataFrame({'Counts': [data.shape[0], data.shape[1]]}, index=['Rows', 'Columns'])
+    table = pd.DataFrame(
+        {'Counts': [data.shape[0], data.shape[1]]},
+        index=['Rows', 'Columns']
+    )
     return data, table
 
-# 시각화 함수
-def plot_weekday_hourly_mood_score(data):
-    """
-    요일별 및 시간대별 평균 기분스코어를 시각화하는 함수.
-    Streamlit 환경에서 작동하도록 설정.
-    """
 
-    # 24시간 숫자를 12시간제 AM/PM 표기로 변환
+# 전처리 함수
+def preprocess_data(data):
+    # 날짜 변환
+    data['date_iso'] = pd.to_datetime(data['date_iso'], errors='coerce')
+
+    # 요일 생성
+    data['weekday'] = data['date_iso'].dt.day_name()
+
+    # 시간 변환
+    data['Hour'] = pd.to_datetime(
+        data['time'],
+        format='%I:%M:%S %p',
+        errors='coerce'
+    ).dt.hour
+
+    # 12시간제 라벨 함수
+    def hour_label(hour):
+        if pd.isna(hour):
+            return None
+
+        hour = int(hour)
+        period = 'AM' if hour < 12 else 'PM'
+        hour12 = hour % 12
+
+        if hour12 == 0:
+            hour12 = 12
+
+        return f'{hour12}{period}'
+
+    # 시간대 컬럼 생성
+    data['TimeSlot'] = data['Hour'].apply(hour_label)
+
+    # 숫자형 컬럼 변환
+    data['mood_score'] = pd.to_numeric(data['mood_score'], errors='coerce')
+    data['temperature_c'] = pd.to_numeric(data['temperature_c'], errors='coerce')
+    data['humidity_percent'] = pd.to_numeric(data['humidity_percent'], errors='coerce')
+    data['precipitation_mm'] = pd.to_numeric(data['precipitation_mm'], errors='coerce')
+
+    return data
+
+
+# 요일별 / 시간대별 평균 기분 점수
+def plot_weekday_hourly_mood_score(data):
+    weekday_order = [
+        'Monday', 'Tuesday', 'Wednesday',
+        'Thursday', 'Friday', 'Saturday', 'Sunday'
+    ]
+
+    weekday_avg = data.groupby('weekday')['mood_score'].mean().reindex(weekday_order)
+
+    hour_avg = data.groupby('Hour')['mood_score'].mean().reindex(range(24))
+
     def hour_label(hour):
         period = 'AM' if hour < 12 else 'PM'
         hour12 = hour % 12
         if hour12 == 0:
             hour12 = 12
         return f'{hour12}{period}'
-    
-    # 시간대 라벨 생성
-    data['TimeSlot'] = data['Hour'].apply(hour_label)
 
-    
-    # 요일별 평균 통행량 계산
-    weekday_avg = data.groupby('weekday')['mood_score'].mean().reindex(
-        ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-    )
+    hour_labels = [hour_label(h) for h in range(24)]
 
-    # 시간대별 평균 통행량 계산
-    hour_avg = data.groupby('TimeSlot')['mood_score'].mean()
-
-    # 요일별 평균 통행량 그래프
     st.subheader('Average Mood Score by Day of the Week')
-    fig, ax = plt.subplots(figsize=(12, 5))
-    ax.bar(weekday_avg.index, weekday_avg.values)
-    ax.set_title('Average Mood Score by Day of the Week')
-    ax.set_xlabel('Day of the Week')
-    ax.set_ylabel('Average Mood Score')
-    ax.grid(axis='y', linestyle='--', alpha=0.7)
-    st.pyplot(fig)
+    fig1, ax1 = plt.subplots(figsize=(12, 5))
+    ax1.bar(weekday_avg.index, weekday_avg.values)
+    ax1.set_title('Average Mood Score by Day of the Week')
+    ax1.set_xlabel('Day of the Week')
+    ax1.set_ylabel('Average Mood Score')
+    ax1.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.xticks(rotation=30)
+    plt.tight_layout()
+    st.pyplot(fig1)
 
-    # 시간대별 평균 통행량 그래프
     st.subheader('Average Mood Score by Hour of the Day')
-    fig, ax = plt.subplots(figsize=(12, 5))
-    ax.plot(hour_avg.index, hour_avg.values, marker='o')
-    ax.set_title('Average Mood Score by Hour of the Day')
-    ax.set_xlabel('Hour of the Day')
-    ax.set_ylabel('Average Mood Score')
-    ax.set_xticks(range(0, 24))
-    ax.grid(axis='both', linestyle='--', alpha=0.7)
-    return fig
+    fig2, ax2 = plt.subplots(figsize=(12, 5))
+    ax2.plot(hour_avg.index, hour_avg.values, marker='o')
+    ax2.set_title('Average Mood Score by Hour of the Day')
+    ax2.set_xlabel('Hour of the Day')
+    ax2.set_ylabel('Average Mood Score')
+    ax2.set_xticks(range(24))
+    ax2.set_xticklabels(hour_labels, rotation=45)
+    ax2.grid(axis='both', linestyle='--', alpha=0.7)
+    plt.tight_layout()
+
+    return fig2
 
 
+# 선택한 mood 분포 파이차트
 def plot_filtered_mood(data, moods):
-    """
-    선택한 교통 상황(Traffic Situation)에 따라 데이터를 필터링하여 파이 차트를 생성합니다.
-    
-    Parameters:
-        data (pd.DataFrame): 교통 데이터를 포함하는 DataFrame.
-        situations (list): 선택된 교통 상황 목록.
-    """
-
     filtered_data = data[data['mood'].isin(moods)]
     mood_counts = filtered_data['mood'].value_counts()
 
-    # 파이 차트 생성
     fig, ax = plt.subplots(figsize=(8, 8))
-    ax.pie(traffic_counts, labels=traffic_counts.index, autopct='%1.1f%%', startangle=140)
+    ax.pie(
+        mood_counts,
+        labels=mood_counts.index,
+        autopct='%1.1f%%',
+        startangle=140
+    )
     ax.set_title('Selected Mood Distribution')
     plt.tight_layout()
     return fig
 
 
-  def plot_top_activities(data):
-      """
-      자주 기록된 활동 TOP 10을 막대 그래프로 시각화합니다.
-      """
-      activity_series = data['activities'].dropna().str.split(',').explode()
-      activity_series = activity_series.str.strip()
-  
-      top_activities = activity_series.value_counts().head(10)
-  
-      fig, ax = plt.subplots(figsize=(10, 6))
-      ax.bar(top_activities.index, top_activities.values)
-      ax.set_title('Top 10 Activities')
-      ax.set_xlabel('Activity')
-      ax.set_ylabel('Count')
-      ax.tick_params(axis='x', rotation=45)
-      ax.grid(axis='y', linestyle='--', alpha=0.7)
-      plt.tight_layout()
-      return fig
+# 활동 TOP 10
+def plot_top_activities(data):
+    activity_series = data['activities'].dropna().str.split(r'[,|]').explode()
+    activity_series = activity_series.str.strip()
+    activity_series = activity_series[activity_series != '']
 
-  def plot_activity_avg_mood(data):
-      """
-      활동별 평균 기분 점수를 막대 그래프로 시각화합니다.
-      """
-      activity_data = data[['activities', 'mood_score']].dropna()
-  
-      activity_data['activity'] = activity_data['activities'].str.split('|')
-      activity_data = activity_data.explode('activity')
-      activity_data['activity'] = activity_data['activity'].str.strip()
-  
-      activity_avg = activity_data.groupby('activity')['mood_score'].mean()
-      activity_avg = activity_avg.sort_values(ascending=False).head(10)
-  
-      fig, ax = plt.subplots(figsize=(10, 6))
-      ax.bar(activity_avg.index, activity_avg.values)
-      ax.set_title('Average Mood Score by Activity')
-      ax.set_xlabel('Activity')
-      ax.set_ylabel('Average Mood Score')
-      ax.tick_params(axis='x', rotation=45)
-      ax.grid(axis='y', linestyle='--', alpha=0.7)
-      plt.tight_layout()
-      return fig
+    top_activities = activity_series.value_counts().head(10)
 
-    def filter_weather_data(data, start_date, end_date, temp_range, humidity_range, precip_range):
-        """
-        날짜, 기온, 습도, 강수량 조건에 따라 데이터를 중첩 필터링합니다.
-        """
-    
-        # 날짜 컬럼 변환
-        data['date_iso'] = pd.to_datetime(data['date_iso'])
-    
-        # 입력 날짜 변환
-        start_date = pd.to_datetime(start_date)
-        end_date = pd.to_datetime(end_date)
-    
-        # 날짜 필터링
-        filtered_data = data[
-            (data['date_iso'] >= start_date) &
-            (data['date_iso'] <= end_date)
-        ]
-    
-        # 기온 필터링
-        filtered_data = filtered_data[
-            (filtered_data['temperature_c'] >= temp_range[0]) &
-            (filtered_data['temperature_c'] <= temp_range[1])
-        ]
-    
-        # 습도 필터링
-        filtered_data = filtered_data[
-            (filtered_data['humidity_percent'] >= humidity_range[0]) &
-            (filtered_data['humidity_percent'] <= humidity_range[1])
-        ]
-    
-        # 강수량 필터링
-        filtered_data = filtered_data[
-            (filtered_data['precipitation_mm'] >= precip_range[0]) &
-            (filtered_data['precipitation_mm'] <= precip_range[1])
-        ]
-    
-        return filtered_data
-    
-    def plot_filtered_weather_mood(data):
-        """
-        필터링된 데이터에서 weather별 평균 mood_score를 막대 그래프로 시각화합니다.
-        """
-    
-        weather_avg = data.groupby('weather')['mood_score'].mean()
-    
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.bar(weather_avg.index, weather_avg.values)
-        ax.set_title('Average Mood Score by Weather')
-        ax.set_xlabel('Weather')
-        ax.set_ylabel('Average Mood Score')
-        ax.grid(axis='y', linestyle='--', alpha=0.7)
-        plt.tight_layout()
-        return fig
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.bar(top_activities.index, top_activities.values)
+    ax.set_title('Top 10 Activities')
+    ax.set_xlabel('Activity')
+    ax.set_ylabel('Count')
+    ax.tick_params(axis='x', rotation=45)
+    ax.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    return fig
+
+
+# 활동별 평균 기분 점수
+def plot_activity_avg_mood(data):
+    activity_data = data[['activities', 'mood_score']].dropna().copy()
+
+    activity_data['activity'] = activity_data['activities'].str.split(r'[,|]')
+    activity_data = activity_data.explode('activity')
+    activity_data['activity'] = activity_data['activity'].str.strip()
+    activity_data = activity_data[activity_data['activity'] != '']
+
+    activity_avg = activity_data.groupby('activity')['mood_score'].mean()
+    activity_avg = activity_avg.sort_values(ascending=False).head(10)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.bar(activity_avg.index, activity_avg.values)
+    ax.set_title('Average Mood Score by Activity')
+    ax.set_xlabel('Activity')
+    ax.set_ylabel('Average Mood Score')
+    ax.tick_params(axis='x', rotation=45)
+    ax.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    return fig
+
+
+# 날씨 조건 중첩 필터링
+def filter_weather_data(data, start_date, end_date, temp_range, humidity_range, precip_range):
+    start_date = pd.to_datetime(start_date)
+    end_date = pd.to_datetime(end_date)
+
+    filtered_data = data[
+        (data['date_iso'] >= start_date) &
+        (data['date_iso'] <= end_date)
+    ]
+
+    filtered_data = filtered_data[
+        (filtered_data['temperature_c'] >= temp_range[0]) &
+        (filtered_data['temperature_c'] <= temp_range[1])
+    ]
+
+    filtered_data = filtered_data[
+        (filtered_data['humidity_percent'] >= humidity_range[0]) &
+        (filtered_data['humidity_percent'] <= humidity_range[1])
+    ]
+
+    filtered_data = filtered_data[
+        (filtered_data['precipitation_mm'] >= precip_range[0]) &
+        (filtered_data['precipitation_mm'] <= precip_range[1])
+    ]
+
+    return filtered_data
+
+
+# 필터링된 데이터의 weather별 평균 mood_score
+def plot_filtered_weather_mood(data):
+    weather_avg = data.groupby('weather')['mood_score'].mean()
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.bar(weather_avg.index, weather_avg.values)
+    ax.set_title('Average Mood Score by Weather')
+    ax.set_xlabel('Weather')
+    ax.set_ylabel('Average Mood Score')
+    ax.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    return fig
 
 
 # Streamlit 앱
 def main():
     st.title("MY DAILY MOOD DATA Dashboard")
     st.sidebar.title("Filters and Options")
-    
-    # 데이터 로드
+
     data, table = load_dataset()
+    data = preprocess_data(data)
+
     st.sidebar.write("### Dataset Overview")
     st.sidebar.table(table)
 
-    # 데이터 전처리
-    data['Hour'] = pd.to_datetime(data['time'], format='%I:%M:%S %p').dt.hour
-    
-    # 날짜 컬럼 변환
-    data['date_iso'] = pd.to_datetime(data['date_iso'])
-    
-    # 시간 컬럼 이름 확인
-    time_col = 'time' 
-    
-    # 시간 정보를 Hour로 변환
-    data['Hour'] = pd.to_datetime(
-        data[time_col],
-        format='%I:%M:%S %p',
-        errors='coerce'
-    ).dt.hour
-    
-    # 24시간 숫자를 12시간제 AM/PM 라벨로 변환
-    def hour_label(hour):
-        if pd.isna(hour):
-            return None
-        
-        hour = int(hour)
-        period = 'AM' if hour < 12 else 'PM'
-        hour12 = hour % 12
-        
-        if hour12 == 0:
-            hour12 = 12
-        
-        return f'{hour12}{period}'
+    st.write("### Explore Mood Data")
 
-
-# 그래프용 시간대 컬럼 생성
-data['TimeSlot'] = data['Hour'].apply(hour_label)
-
-# 숫자형 컬럼 변환
-data['mood_score'] = pd.to_numeric(data['mood_score'], errors='coerce')
-data['temperature_c'] = pd.to_numeric(data['temperature_c'], errors='coerce')
-data['humidity_percent'] = pd.to_numeric(data['humidity_percent'], errors='coerce')
-data['precipitation_mm'] = pd.to_numeric(data['precipitation_mm'], errors='coerce')
-    
-    # 탭으로 그래프 선택
-    st.write("### Explore Traffic Data")
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(
-        ["Weekday & Hourly", "Traffic Situation", "Vehicle Totals", "Daily Trend", "Heatmap"]
+    tab1, tab2, tab3, tab4 = st.tabs(
+        ["Weekday & Hourly", "Mood Distribution", "Activities", "Weather Filter"]
     )
-    
-    with tab1:
-        st.write("#### Weekday & Hourly Traffic Volume")
-        week_hourly_traffic_fig = plot_weekday_hourly_traffic(data)
-        st.pyplot(week_hourly_traffic_fig)
-    
-    with tab2:
-        st.write("#### Traffic Situation Distribution")
-        filtered_situation_fig = plot_filtered_traffic_situation(data, situations)
-        st.pyplot(filtered_situation_fig)
-    
-    with tab3:
-        st.write("#### Total Traffic Counts by Vehicle Type")
-        vehicle_totals_fig = plot_vehicle_type_totals(data)
-        st.pyplot(vehicle_totals_fig)
-    
-    with tab4:
-        st.write("#### Daily Traffic Volume Trend")
-        daily_trend_fig = plot_daily_traffic_trend_with_filter(data, start_date, end_date)
-        st.pyplot(daily_trend_fig)
-    
-    with tab5:
-        st.write("#### Weekday and Hourly Heatmap")
-        time_filtered_heatmap_fig = plot_time_filtered_heatmap(data, hour_range)
-        st.pyplot(time_filtered_heatmap_fig)
 
-# 앱 실행
+    with tab1:
+        st.write("#### Weekday & Hourly Mood Score")
+        fig = plot_weekday_hourly_mood_score(data)
+        st.pyplot(fig)
+
+    with tab2:
+        st.write("#### Mood Distribution")
+
+        mood_options = data['mood'].dropna().unique().tolist()
+
+        selected_moods = st.multiselect(
+            'Select Mood',
+            mood_options,
+            default=mood_options
+        )
+
+        if selected_moods:
+            fig = plot_filtered_mood(data, selected_moods)
+            st.pyplot(fig)
+        else:
+            st.warning('하나 이상의 mood를 선택하세요.')
+
+    with tab3:
+        st.write("#### Activity Analysis")
+
+        fig1 = plot_top_activities(data)
+        st.pyplot(fig1)
+
+        fig2 = plot_activity_avg_mood(data)
+        st.pyplot(fig2)
+
+    with tab4:
+        st.write("#### Weather-based Mood Filter")
+
+        start_date = st.date_input(
+            'Start Date',
+            data['date_iso'].min().date()
+        )
+
+        end_date = st.date_input(
+            'End Date',
+            data['date_iso'].max().date()
+        )
+
+        temp_range = st.slider(
+            'Temperature Range (°C)',
+            float(data['temperature_c'].min()),
+            float(data['temperature_c'].max()),
+            (
+                float(data['temperature_c'].min()),
+                float(data['temperature_c'].max())
+            )
+        )
+
+        humidity_range = st.slider(
+            'Humidity Range (%)',
+            int(data['humidity_percent'].min()),
+            int(data['humidity_percent'].max()),
+            (
+                int(data['humidity_percent'].min()),
+                int(data['humidity_percent'].max())
+            )
+        )
+
+        precip_range = st.slider(
+            'Precipitation Range (mm)',
+            float(data['precipitation_mm'].min()),
+            float(data['precipitation_mm'].max()),
+            (
+                float(data['precipitation_mm'].min()),
+                float(data['precipitation_mm'].max())
+            )
+        )
+
+        filtered_data = filter_weather_data(
+            data,
+            start_date,
+            end_date,
+            temp_range,
+            humidity_range,
+            precip_range
+        )
+
+        st.write('Filtered Data Count:', len(filtered_data))
+
+        if len(filtered_data) > 0:
+            fig = plot_filtered_weather_mood(filtered_data)
+            st.pyplot(fig)
+        else:
+            st.warning('선택한 조건에 해당하는 데이터가 없습니다.')
+
+
 if __name__ == "__main__":
     main()
