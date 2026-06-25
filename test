@@ -3,6 +3,30 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import altair as alt
 
+# ✅ 페이지 설정 + 색 꾸미기
+st.set_page_config(
+    page_title="😊 Mood Dashboard",
+    page_icon="😊",
+    layout="wide"
+)
+
+# ✅ 커스텀 CSS로 색 꾸미기
+st.markdown("""
+    <style>
+    .main { background-color: #f0f4f8; }
+    .stTabs [data-baseweb="tab"] {
+        font-size: 16px;
+        font-weight: bold;
+        color: #4a4a8a;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #d0d8ff;
+        border-radius: 8px 8px 0 0;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+
 # 데이터 로드 함수
 def load_dataset():
     data = pd.read_csv('Daylio_Abid_with_synthetic_weather.csv')
@@ -15,37 +39,26 @@ def load_dataset():
 
 # 전처리 함수
 def preprocess_data(data):
-    # 날짜 변환
     data['date_iso'] = pd.to_datetime(data['date_iso'], errors='coerce')
-
-    # 요일 생성
     data['weekday'] = data['date_iso'].dt.day_name()
 
-    # 시간 변환
     data['Hour'] = pd.to_datetime(
         data['time'].astype(str).str.strip(),
         format='%I:%M %p',
         errors='coerce'
     ).dt.hour
 
-    # 12시간제 라벨 함수
     def hour_label(hour):
         if pd.isna(hour):
             return None
-
         hour = int(hour)
         period = 'AM' if hour < 12 else 'PM'
         hour12 = hour % 12
-
         if hour12 == 0:
             hour12 = 12
-
         return f'{hour12}{period}'
 
-    # 시간대 컬럼 생성
     data['TimeSlot'] = data['Hour'].apply(hour_label)
-
-    # 숫자형 컬럼 변환
     data['mood_score'] = pd.to_numeric(data['mood_score'], errors='coerce')
     data['temperature_c'] = pd.to_numeric(data['temperature_c'], errors='coerce')
     data['humidity_percent'] = pd.to_numeric(data['humidity_percent'], errors='coerce')
@@ -56,13 +69,8 @@ def preprocess_data(data):
 
 # 요일별 / 시간대별 평균 기분 점수
 def plot_weekday_hourly_mood_score(data):
-    weekday_order = [
-        'Monday', 'Tuesday', 'Wednesday',
-        'Thursday', 'Friday', 'Saturday', 'Sunday'
-    ]
-
+    weekday_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
     weekday_avg = data.groupby('weekday')['mood_score'].mean().reindex(weekday_order)
-
     hour_avg = data.groupby('Hour')['mood_score'].mean().reindex(range(24))
 
     def hour_label(hour):
@@ -74,9 +82,9 @@ def plot_weekday_hourly_mood_score(data):
 
     hour_labels = [hour_label(h) for h in range(24)]
 
-    st.subheader('Average Mood Score by Day of the Week')
+    st.subheader('📅 Average Mood Score by Day of the Week')
     fig1, ax1 = plt.subplots(figsize=(12, 5))
-    ax1.bar(weekday_avg.index, weekday_avg.values)
+    ax1.bar(weekday_avg.index, weekday_avg.values, color='#6c8ebf')
     ax1.set_title('Average Mood Score by Day of the Week')
     ax1.set_xlabel('Day of the Week')
     ax1.set_ylabel('Average Mood Score')
@@ -85,9 +93,9 @@ def plot_weekday_hourly_mood_score(data):
     plt.tight_layout()
     st.pyplot(fig1)
 
-    st.subheader('Average Mood Score by Hour of the Day')
+    st.subheader('🕐 Average Mood Score by Hour of the Day')
     fig2, ax2 = plt.subplots(figsize=(12, 5))
-    ax2.plot(hour_avg.index, hour_avg.values, marker='o')
+    ax2.plot(hour_avg.index, hour_avg.values, marker='o', color='#e07b54')
     ax2.set_title('Average Mood Score by Hour of the Day')
     ax2.set_xlabel('Hour of the Day')
     ax2.set_ylabel('Average Mood Score')
@@ -105,11 +113,13 @@ def plot_filtered_mood(data, moods):
     mood_counts = filtered_data['mood'].value_counts()
 
     fig, ax = plt.subplots(figsize=(8, 8))
+    colors = ['#ff9999','#66b3ff','#99ff99','#ffcc99','#c2c2f0']
     ax.pie(
         mood_counts,
         labels=mood_counts.index,
         autopct='%1.1f%%',
-        startangle=140
+        startangle=140,
+        colors=colors[:len(mood_counts)]
     )
     ax.set_title('Selected Mood Distribution')
     plt.tight_layout()
@@ -121,11 +131,10 @@ def plot_top_activities(data):
     activity_series = data['activities'].dropna().str.split(r'[,|]').explode()
     activity_series = activity_series.str.strip()
     activity_series = activity_series[activity_series != '']
-
     top_activities = activity_series.value_counts().head(10)
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    ax.bar(top_activities.index, top_activities.values)
+    ax.bar(top_activities.index, top_activities.values, color='#82c4a0')
     ax.set_title('Top 10 Activities')
     ax.set_xlabel('Activity')
     ax.set_ylabel('Count')
@@ -138,17 +147,15 @@ def plot_top_activities(data):
 # 활동별 평균 기분 점수
 def plot_activity_avg_mood(data):
     activity_data = data[['activities', 'mood_score']].dropna().copy()
-
     activity_data['activity'] = activity_data['activities'].str.split(r'[,|]')
     activity_data = activity_data.explode('activity')
     activity_data['activity'] = activity_data['activity'].str.strip()
     activity_data = activity_data[activity_data['activity'] != '']
-
     activity_avg = activity_data.groupby('activity')['mood_score'].mean()
     activity_avg = activity_avg.sort_values(ascending=False).head(10)
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    ax.bar(activity_avg.index, activity_avg.values)
+    ax.bar(activity_avg.index, activity_avg.values, color='#a78bdb')
     ax.set_title('Average Mood Score by Activity')
     ax.set_xlabel('Activity')
     ax.set_ylabel('Average Mood Score')
@@ -165,24 +172,14 @@ def filter_weather_data(data, start_date, end_date, temp_range, humidity_range, 
 
     filtered_data = data[
         (data['date_iso'] >= start_date) &
-        (data['date_iso'] <= end_date)
+        (data['date_iso'] <= end_date) &
+        (data['temperature_c'] >= temp_range[0]) &
+        (data['temperature_c'] <= temp_range[1]) &
+        (data['humidity_percent'] >= humidity_range[0]) &
+        (data['humidity_percent'] <= humidity_range[1]) &
+        (data['precipitation_mm'] >= precip_range[0]) &
+        (data['precipitation_mm'] <= precip_range[1])
     ]
-
-    filtered_data = filtered_data[
-        (filtered_data['temperature_c'] >= temp_range[0]) &
-        (filtered_data['temperature_c'] <= temp_range[1])
-    ]
-
-    filtered_data = filtered_data[
-        (filtered_data['humidity_percent'] >= humidity_range[0]) &
-        (filtered_data['humidity_percent'] <= humidity_range[1])
-    ]
-
-    filtered_data = filtered_data[
-        (filtered_data['precipitation_mm'] >= precip_range[0]) &
-        (filtered_data['precipitation_mm'] <= precip_range[1])
-    ]
-
     return filtered_data
 
 
@@ -191,7 +188,7 @@ def plot_filtered_weather_mood(data):
     weather_avg = data.groupby('weather')['mood_score'].mean()
 
     fig, ax = plt.subplots(figsize=(10, 6))
-    ax.bar(weather_avg.index, weather_avg.values)
+    ax.bar(weather_avg.index, weather_avg.values, color='#f0a060')
     ax.set_title('Average Mood Score by Weather')
     ax.set_xlabel('Weather')
     ax.set_ylabel('Average Mood Score')
@@ -199,6 +196,8 @@ def plot_filtered_weather_mood(data):
     plt.tight_layout()
     return fig
 
+
+# 히트맵
 def make_heatmap(data):
     data = data.copy()
     data['year'] = data['date_iso'].dt.year
@@ -207,10 +206,18 @@ def make_heatmap(data):
 
     years = sorted(data['year'].dropna().unique().tolist())
 
-    selected_year = st.selectbox('Select Year', options=years)
+    # ✅ session_state로 선택 연도 기억
+    if 'selected_year' not in st.session_state:
+        st.session_state['selected_year'] = years[0]
+
+    selected_year = st.selectbox(
+        '📆 Select Year',
+        options=years,
+        index=years.index(st.session_state['selected_year']),
+        key='selected_year'
+    )
 
     filtered = data[data['year'] == selected_year]
-
     daily_avg = filtered.groupby(['month', 'day'])['mood_score'].mean().reset_index()
 
     month_names = {1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'May',6:'Jun',
@@ -244,117 +251,108 @@ def make_heatmap(data):
 
     st.altair_chart(heatmap, use_container_width=True)
 
+
 # Streamlit 앱
 def main():
-    st.title("MY DAILY MOOD DATA Dashboard")
-    st.sidebar.title("Filters and Options")
+    st.title("😊 MY DAILY MOOD DATA Dashboard")
+    st.sidebar.title("🔧 Filters and Options")
 
     data, table = load_dataset()
     data = preprocess_data(data)
 
-    st.sidebar.write("### Dataset Overview")
+    st.sidebar.write("### 📊 Dataset Overview")
     st.sidebar.table(table)
 
-    st.write("### Explore Mood Data")
+    # ✅ session_state로 선택된 탭 기억
+    if 'active_tab' not in st.session_state:
+        st.session_state['active_tab'] = 0
 
-    tab1, tab2, tab3, tab4, tab5= st.tabs(
-        ["Weekday & Hourly", "Mood Distribution", "Activities", "Weather Filter","Mood Heatmap"]
-    )
+    st.write("### 🔍 Explore Mood Data")
+
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "📅 Weekday & Hourly",
+        "😄 Mood Distribution",
+        "🏃 Activities",
+        "🌤️ Weather Filter",
+        "🗓️ Mood Heatmap"
+    ])
 
     with tab1:
-        st.write("#### Weekday & Hourly Mood Score")
+        st.write("#### 📅 Weekday & Hourly Mood Score")
         fig = plot_weekday_hourly_mood_score(data)
         st.pyplot(fig)
 
     with tab2:
-        st.write("#### Mood Distribution")
-
+        st.write("#### 😄 Mood Distribution")
         mood_options = data['mood'].dropna().unique().tolist()
 
+        # ✅ session_state로 선택된 mood 기억
+        if 'selected_moods' not in st.session_state:
+            st.session_state['selected_moods'] = mood_options
+
         selected_moods = st.multiselect(
-            'Select Mood',
+            'Select Mood 😊',
             mood_options,
-            default=mood_options
+            default=st.session_state['selected_moods'],
+            key='selected_moods'
         )
 
         if selected_moods:
             fig = plot_filtered_mood(data, selected_moods)
             st.pyplot(fig)
         else:
-            st.warning('하나 이상의 mood를 선택하세요.')
+            st.warning('⚠️ 하나 이상의 mood를 선택하세요.')
 
     with tab3:
-        st.write("#### Activity Analysis")
-
+        st.write("#### 🏃 Activity Analysis")
         fig1 = plot_top_activities(data)
         st.pyplot(fig1)
-
         fig2 = plot_activity_avg_mood(data)
         st.pyplot(fig2)
 
     with tab4:
-        st.write("#### Weather-based Mood Filter")
+        st.write("#### 🌤️ Weather-based Mood Filter")
 
-        start_date = st.date_input(
-            'Start Date',
-            data['date_iso'].min().date()
-        )
-
-        end_date = st.date_input(
-            'End Date',
-            data['date_iso'].max().date()
-        )
+        start_date = st.date_input('📅 Start Date', data['date_iso'].min().date())
+        end_date = st.date_input('📅 End Date', data['date_iso'].max().date())
 
         temp_range = st.slider(
-            'Temperature Range (°C)',
+            '🌡️ Temperature Range (°C)',
             float(data['temperature_c'].min()),
             float(data['temperature_c'].max()),
-            (
-                float(data['temperature_c'].min()),
-                float(data['temperature_c'].max())
-            )
+            (float(data['temperature_c'].min()), float(data['temperature_c'].max()))
         )
 
         humidity_range = st.slider(
-            'Humidity Range (%)',
+            '💧 Humidity Range (%)',
             int(data['humidity_percent'].min()),
             int(data['humidity_percent'].max()),
-            (
-                int(data['humidity_percent'].min()),
-                int(data['humidity_percent'].max())
-            )
+            (int(data['humidity_percent'].min()), int(data['humidity_percent'].max()))
         )
 
         precip_range = st.slider(
-            'Precipitation Range (mm)',
+            '🌧️ Precipitation Range (mm)',
             float(data['precipitation_mm'].min()),
             float(data['precipitation_mm'].max()),
-            (
-                float(data['precipitation_mm'].min()),
-                float(data['precipitation_mm'].max())
-            )
+            (float(data['precipitation_mm'].min()), float(data['precipitation_mm'].max()))
         )
 
         filtered_data = filter_weather_data(
-            data,
-            start_date,
-            end_date,
-            temp_range,
-            humidity_range,
-            precip_range
+            data, start_date, end_date, temp_range, humidity_range, precip_range
         )
 
-        st.write('Filtered Data Count:', len(filtered_data))
+        st.write('🔎 Filtered Data Count:', len(filtered_data))
 
         if len(filtered_data) > 0:
             fig = plot_filtered_weather_mood(filtered_data)
             st.pyplot(fig)
         else:
-            st.warning('선택한 조건에 해당하는 데이터가 없습니다.')
-    
+            st.warning('⚠️ 선택한 조건에 해당하는 데이터가 없습니다.')
+
     with tab5:
-        st.write("#### Monthly Mood Score Heatmap")
+        st.write("#### 🗓️ Daily Mood Score Heatmap")
         make_heatmap(data)
+
 
 if __name__ == "__main__":
     main()
