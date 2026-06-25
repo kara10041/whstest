@@ -5,7 +5,7 @@ import seaborn as sns
 
 # 데이터 로드 함수
 def load_dataset():
-    data = pd.read_csv('Traffic.csv')
+    data = pd.read_csv('Daylio_Abid_with_synthetic_weather.csv')
     table = pd.DataFrame({'Counts': [data.shape[0], data.shape[1]]}, index=['Rows', 'Columns'])
     return data, table
 
