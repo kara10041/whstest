@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+import altair as alt
 
 # 데이터 로드 함수
 def load_dataset():
@@ -23,6 +24,7 @@ def preprocess_data(data):
     # 시간 변환
     data['Hour'] = pd.to_datetime(
         data['time'].astype(str).str.strip(),
+        format='%I:%M %p',
         errors='coerce'
     ).dt.hour
 
@@ -197,6 +199,50 @@ def plot_filtered_weather_mood(data):
     plt.tight_layout()
     return fig
 
+def make_heatmap(data):
+    data = data.copy()
+    data['year'] = data['date_iso'].dt.year
+    data['month'] = data['date_iso'].dt.month
+    data['day'] = data['date_iso'].dt.day
+
+    years = sorted(data['year'].dropna().unique().tolist())
+
+    selected_year = st.selectbox('Select Year', options=years)
+
+    filtered = data[data['year'] == selected_year]
+
+    daily_avg = filtered.groupby(['month', 'day'])['mood_score'].mean().reset_index()
+
+    month_names = {1:'Jan',2:'Feb',3:'Mar',4:'Apr',5:'May',6:'Jun',
+                   7:'Jul',8:'Aug',9:'Sep',10:'Oct',11:'Nov',12:'Dec'}
+    daily_avg['month_name'] = daily_avg['month'].map(month_names)
+
+    heatmap = alt.Chart(daily_avg).mark_rect().encode(
+        y=alt.Y('month_name:O',
+                sort=list(month_names.values()),
+                axis=alt.Axis(title='Month', titleFontSize=18,
+                              titlePadding=15, titleFontWeight=900, labelAngle=0)),
+        x=alt.X('day:O',
+                axis=alt.Axis(title='Day', titleFontSize=18, titlePadding=15)),
+        color=alt.Color('mood_score:Q',
+                        scale=alt.Scale(scheme='blues', domain=[1, 5]),
+                        legend=alt.Legend(title='Mood Score')),
+        stroke=alt.value('black'),
+        strokeWidth=alt.value(0.25),
+        tooltip=[
+            alt.Tooltip('month_name:O', title='Month'),
+            alt.Tooltip('day:O', title='Day'),
+            alt.Tooltip('mood_score:Q', title='Mood Score', format='.2f')
+        ]
+    ).properties(
+        width=900,
+        height=300
+    ).configure_axis(
+        labelFontSize=12,
+        titleFontSize=12
+    )
+
+    st.altair_chart(heatmap, use_container_width=True)
 
 # Streamlit 앱
 def main():
@@ -211,8 +257,8 @@ def main():
 
     st.write("### Explore Mood Data")
 
-    tab1, tab2, tab3, tab4 = st.tabs(
-        ["Weekday & Hourly", "Mood Distribution", "Activities", "Weather Filter"]
+    tab1, tab2, tab3, tab4, tab5= st.tabs(
+        ["Weekday & Hourly", "Mood Distribution", "Activities", "Weather Filter","Mood Heatmap"]
     )
 
     with tab1:
@@ -305,7 +351,10 @@ def main():
             st.pyplot(fig)
         else:
             st.warning('선택한 조건에 해당하는 데이터가 없습니다.')
-
+    
+    with tab5:
+        st.write("#### Monthly Mood Score Heatmap")
+        make_heatmap(data)
 
 if __name__ == "__main__":
     main()
