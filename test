@@ -22,8 +22,7 @@ def preprocess_data(data):
 
     # 시간 변환
     data['Hour'] = pd.to_datetime(
-        data['time'],
-        format='%I:%M:%S %p',
+        data['time'].astype(str).str.strip(),
         errors='coerce'
     ).dt.hour
 
